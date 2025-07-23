@@ -15,8 +15,54 @@ const axiosInstance = wrapper(axios.create({
     }
 }));
 
-// ... (mantenha as funções extractValue, getRecaptchaToken e getCSRFToken iguais)
+// Função auxiliar para extrair valores
+function extractValue(text, start, end) {
+    const startIndex = text.indexOf(start);
+    if (startIndex === -1) return null;
+    const endIndex = text.indexOf(end, startIndex + start.length);
+    if (endIndex === -1) return null;
+    return text.substring(startIndex + start.length, endIndex);
+}
 
+// Função para obter token reCAPTCHA (AGORA DEFINIDA CORRETAMENTE)
+async function getRecaptchaToken() {
+    try {
+        await axiosInstance.get('https://binchecker.pro/');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        const ANCHOR_LINK = 'https://www.google.com/recaptcha/api2/anchor?ar=1&k=6LenoYUfAAAAABiVts42vmUI7eDm87pFCctEiWPc&co=aHR0cHM6Ly9iaW5jaGVja2VyLnBybzo0NDM.&hl=pt-BR&v=EGO3I7Q26cZ-jBw3BEtzIx7-&size=invisible&cb=2tc2aygyo0r0';
+        const response1 = await axiosInstance.get(ANCHOR_LINK);
+        const rtk = extractValue(response1.data, '<input type="hidden" id="recaptcha-token" value="', '"');
+        if (!rtk) throw new Error('Token recaptcha não encontrado');
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        const RELOAD_LINK = 'https://www.google.com/recaptcha/api2/reload?k=6LenoYUfAAAAABiVts42vmUI7eDm87pFCctEiWPc';
+        const response2 = await axiosInstance.post(RELOAD_LINK, `v=EGO3I7Q26cZ-jBw3BEtzIx7-&reason=q&c=${rtk}&k=6LenoYUfAAAAABiVts42vmUI7eDm87pFCctEiWPc&co=aHR0cHM6Ly9iaW5jaGVja2VyLnBybzo0NDM.&hl=pt-BR&size=invisible&chr=[89,64,27]&vh=13599012192&bg=!q62grYxHRvVxjUIjSFNd0mlvrZ-iCgIHAAAB6FcAAAANnAkBySdqTJGFRK7SirleWAwPVhv9-XwP8ugGSTJJgQ46-0RVSX3WSakV_UKP1K_fUxhR90xgy1KKiAw66XHwqkXxhH8PoDS4RkAqH0cV3HBWwE4Ox3Jc_l3AMKg6sGJ3Q5RTA5E7TYlc9DiQu4_213hMLWkC_MGhqhnggo8tGkiBu4-96UwNDD7lnojjpV8VZc7bTCsEYHDOzEEgr_iYP5IXL7KiLCJgJHQG7_h-_wTMmwR1EpVNTR8Z8UYC9VBZh_hPkf_eY6GlEXrAEJaXDZgXS9FSH_OvZeJAws9xxC3kgZ0HhEBMQDwFw7Yyf_8bRmXWs7olnZpQc3U3HVpEHb2Ie_KqPzQPNRdaUhLgfpAZpQcO4lDvw6qDCKJ0aWQ`, {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            }
+        });
+
+        return extractValue(response2.data, 'rresp","', '"');
+    } catch (error) {
+        console.error('Erro no recaptcha:', error.message);
+        return null;
+    }
+}
+
+// Função para obter token CSRF (AGORA DEFINIDA CORRETAMENTE)
+async function getCSRFToken() {
+    try {
+        const response = await axiosInstance.get('https://binchecker.pro/');
+        return extractValue(response.data, 'name="csrf-token" content="', '"');
+    } catch (error) {
+        console.error('Erro no CSRF:', error.message);
+        return null;
+    }
+}
+
+// Servidor HTTP
 const server = http.createServer(async (req, res) => {
     const { bin } = url.parse(req.url, true).query;
     
@@ -28,6 +74,10 @@ const server = http.createServer(async (req, res) => {
     try {
         const recaptchaToken = await getRecaptchaToken();
         const csrfToken = await getCSRFToken();
+
+        if (!recaptchaToken || !csrfToken) {
+            throw new Error('Falha ao obter tokens necessários');
+        }
 
         const response = await axiosInstance.post('https://binchecker.pro/bincheck', {
             bin: bin,
@@ -41,7 +91,7 @@ const server = http.createServer(async (req, res) => {
             }
         });
 
-        // Resposta formatada para seu bot:
+        // Resposta formatada para seu bot
         const responseData = {
             success: true,
             bin: bin,
@@ -57,9 +107,9 @@ const server = http.createServer(async (req, res) => {
 
     } catch (error) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ 
+        res.end(JSON.stringify({
             success: false,
-            error: error.message 
+            error: error.message
         }));
     }
 });
